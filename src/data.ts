@@ -497,6 +497,9 @@ async function loadExperiments(): Promise<ExperimentData> {
 
 export async function loadWorldData(): Promise<WorldData> {
   const experiments = await loadExperiments();
+  if (typeof window !== "undefined") {
+    return { ...fallbackData, experiments, source: "fallback" };
+  }
   try {
     const [dashboard, cases, patterns, candidates, policyWeights] = await Promise.all([
       apiGet<Dashboard>("/api/dashboard"),

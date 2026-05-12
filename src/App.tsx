@@ -1,177 +1,228 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AuditCase, CaseGraph, CsvRow, Passport, RouteInfo, WorldData } from "./types";
-import {
-  actionLabels,
-  agentLabels,
-  getActionDescription,
-  getActionLabel,
-  getCaseDisplayLevel,
-  getCaseDisplayScore,
-  getCasePattern,
-  getCaseSummary,
-  getCaseTitle,
-  loadWorldData
-} from "./data";
+import type { CSSProperties } from "react";
+import type { AuditCase, Passport, RouteInfo, WorldData } from "./types";
+import { getActionDescription, getActionLabel, getCaseDisplayScore, getCasePattern, getCaseTitle, loadWorldData } from "./data";
 
-type Difficulty = "easy" | "normal" | "hard";
+type PassportState = "未就绪" | "构建中" | "可复核";
 
-interface Stage {
+interface LifecycleStage {
   id: string;
   no: number;
   title: string;
-  subtitle: string;
+  shortTitle: string;
   place: string;
-  action: string;
-  guardian: string;
-  guardianRole: string;
+  icon: string;
   x: number;
   y: number;
   color: string;
-  loot: string;
-  result: string;
+  risk: number;
+  coverage: number;
+  passportState: PassportState;
+  orderState: string;
+  thiefState: string;
+  story: string;
+  visibleData: string[];
+  tags: string[];
+  techPoint: string;
+  nextReason: string;
+  action?: string;
 }
 
-const DIFFICULTY_CASE: Record<Difficulty, string> = {
-  easy: "AER-003",
-  normal: "AER-002",
-  hard: "AER-001"
-};
+interface DataSource {
+  id: string;
+  label: string;
+  icon: string;
+  stage: number;
+  x: number;
+  y: number;
+  color: string;
+  detail: string;
+}
 
-const DIFFICULTY_LABELS: Record<Difficulty, { label: string; note: string; catchStage: number }> = {
-  easy: { label: "Easy", note: "弱信号观察", catchStage: 3 },
-  normal: { label: "Normal", note: "复合异常追证", catchStage: 5 },
-  hard: { label: "Hard", note: "团伙骗补 Boss", catchStage: 7 }
-};
+const DASHBOARD_URL = "https://team-i-leo.github.io/team-i-openclaw-audit-dashboard-site/";
 
-const stages: Stage[] = [
+const stages: LifecycleStage[] = [
   {
-    id: "risk-space",
+    id: "entry",
     no: 1,
-    title: "业务风险空间",
-    subtitle: "订单、退款、补贴与设备信号进入审计地平线",
-    place: "起点集市",
-    action: "analyze_behavior_sequence",
-    guardian: "风险信号 Agent",
-    guardianRole: "从实时流中点亮异常火种",
-    x: 11,
-    y: 63,
-    color: "#ef6f4d",
-    loot: "风险分 +0.18",
-    result: "黑灰产脚印被捕捉，案件从业务流进入追证链。"
+    title: "实时订单流接入",
+    shortTitle: "订单流接入",
+    place: "大促入口",
+    icon: "票",
+    x: 9,
+    y: 65,
+    color: "#5ca8ff",
+    risk: 0.32,
+    coverage: 0,
+    passportState: "未就绪",
+    orderState: "普通交易流入",
+    thiefState: "混入订单流",
+    story: "一笔看似正常的大促补贴订单进入平台，系统暂不下结论，只把它纳入连续审计流。",
+    visibleData: ["订单 AER-001", "场景：大促补贴", "初始风险：可观察"],
+    tags: ["订单主表", "促销窗口", "补贴券"],
+    techPoint: "实时订单流接入让连续审计从交易发生时开始，不等事后抽样。",
+    nextReason: "单看订单无法判断团伙骗补，需要绑定支付、物流、退款、设备、IP 与补贴数据。"
   },
   {
-    id: "source-ingest",
+    id: "sources",
     no: 2,
-    title: "多源数据接入",
-    subtitle: "订单、支付、物流、评论、设备、IP 与外部特征同屏对齐",
+    title: "多源异构数据融合",
+    shortTitle: "多源异构融合",
     place: "多源地层",
-    action: "expand_infra_graph",
-    guardian: "数据编织者",
-    guardianRole: "把散落证据铸成统一地貌",
-    x: 27,
-    y: 56,
-    color: "#35a7ff",
-    loot: "源覆盖 +42%",
-    result: "孤立表格被接成可追踪的证据地层。"
+    icon: "源",
+    x: 23,
+    y: 53,
+    color: "#35c8ff",
+    risk: 0.46,
+    coverage: 0.32,
+    passportState: "未就绪",
+    orderState: "证据网络形成",
+    thiefState: "被数据标记",
+    story: "支付、退款、物流、评论、设备、IP、补贴和外部特征汇入同一笔订单，孤立交易被融合成可追踪的异构证据对象。",
+    visibleData: ["订单/支付/退款", "物流/评论/设备", "IP/补贴/外部特征"],
+    tags: ["支付路径", "物流轨迹", "设备指纹", "IP 画像", "补贴台账"],
+    techPoint: "多源异构数据融合把订单从单点记录扩展为业务证据网络。",
+    nextReason: "数据接入后需要让异常组合显影，识别哪些信号真正可疑。",
+    action: "expand_infra_graph"
   },
   {
-    id: "fusion",
+    id: "signals",
     no: 3,
-    title: "融合与案例构建",
-    subtitle: "跨表实体、关系边和时间线汇聚为一张案件图",
-    place: "证据森林",
-    action: "search_historical_cases",
-    guardian: "图谱工匠",
-    guardianRole: "把同一团伙的影子连成网络",
-    x: 42,
-    y: 57,
-    color: "#7ed957",
-    loot: "关联边 +32",
-    result: "账号、设备、IP、支付账户与收货地完成关系扩展。"
+    title: "多维风险信号发现",
+    shortTitle: "风险信号发现",
+    place: "风险显影镜",
+    icon: "警",
+    x: 37,
+    y: 60,
+    color: "#ff8a4c",
+    risk: 0.68,
+    coverage: 0.48,
+    passportState: "未就绪",
+    orderState: "可疑信号出现",
+    thiefState: "伪装开始失效",
+    story: "多维异常同时亮起：设备复用、IP 聚集、支付集中、快速退款和补贴资格重复。",
+    visibleData: ["3 台设备连接多账号", "少量 IP 承载多笔订单", "下单后快速退款"],
+    tags: ["设备复用", "IP 聚集", "支付集中", "快速退款", "补贴重复"],
+    techPoint: "多维风险信号发现同时观察统计、关系、时序和语义异常，不依赖单条规则一刀切。",
+    nextReason: "信号只是线索，需要进入模式库判断它像哪一种已知黑灰产结构。",
+    action: "analyze_behavior_sequence"
   },
   {
-    id: "agent-sun",
+    id: "pattern",
     no: 4,
+    title: "风险模式库匹配",
+    shortTitle: "模式库匹配",
+    place: "风险档案馆",
+    icon: "库",
+    x: 51,
+    y: 47,
+    color: "#f3c94f",
+    risk: 0.78,
+    coverage: 0.6,
+    passportState: "构建中",
+    orderState: "命中团伙骗补模式",
+    thiefState: "被模式库识别",
+    story: "订单与 EC-SKIM-001 团伙刷单骗补高度相似，但物流真实性和反证解释仍未补齐。",
+    visibleData: ["命中：多账号共享设备", "命中：IP 与支付集中", "待追：物流真实性/反证解释"],
+    tags: ["EC-SKIM-001", "设备共享", "支付集中", "物流待追", "反证待查"],
+    techPoint: "模式库给出风险方向，同时暴露证据缺口。",
+    nextReason: "不能靠相似度直接结案，下一步由 Agent 决定缺什么证据就追什么。",
+    action: "search_historical_cases"
+  },
+  {
+    id: "agent",
+    no: 5,
     title: "Agent 主动追证",
-    subtitle: "太阳守护者根据证据缺口持续发光、追踪、反思",
-    place: "太阳神殿",
-    action: "seek_counter_evidence",
-    guardian: "主动追证 Agent",
-    guardianRole: "追问缺口，寻找支持证据与反证",
-    x: 58,
-    y: 60,
-    color: "#ffd166",
-    loot: "追证能量 +24",
-    result: "系统不止命中规则，而是主动选择下一步取证动作。"
+    shortTitle: "Agent追证",
+    place: "太阳追证台",
+    icon: "光",
+    x: 65,
+    y: 55,
+    color: "#ffdc62",
+    risk: 0.86,
+    coverage: 0.78,
+    passportState: "构建中",
+    orderState: "证据缺口被补齐",
+    thiefState: "被光束锁定",
+    story: "Agent 太阳按证据缺口依次追问支付簇、物流真实性、退款簇、补贴台账和反证解释。",
+    visibleData: ["追支付簇", "追物流真实性", "追退款/补贴/反证"],
+    tags: ["支付簇", "物流真实性", "退款簇", "补贴台账", "反证检索"],
+    techPoint: "智能性体现在主动选择下一步取证目标，而不是只展示模型图标。",
+    nextReason: "Agent 的建议需要落到可审计、可复核、可留痕的受控动作。",
+    action: "seek_counter_evidence"
   },
   {
     id: "openclaw",
-    no: 5,
+    no: 6,
     title: "OpenCLAW 受控动作",
-    subtitle: "所有工具调用通过受控工坊执行、记账、留痕",
-    place: "受控工坊",
-    action: "query_payment_cluster",
-    guardian: "OpenCLAW 门卫",
-    guardianRole: "把动作约束在可审计边界内",
-    x: 72,
-    y: 58,
-    color: "#b975ff",
-    loot: "治理风险 -68%",
-    result: "关系扩展、退款查询、支付簇和物流追踪进入受控动作注册表。"
+    shortTitle: "OpenCLAW动作",
+    place: "OpenCLAW 工坊",
+    icon: "工",
+    x: 76,
+    y: 66,
+    color: "#ad8cff",
+    risk: 0.91,
+    coverage: 0.9,
+    passportState: "构建中",
+    orderState: "支持证据与反证入库",
+    thiefState: "被证据线缠绕",
+    story: "Agent 选中的动作进入 OpenCLAW 受控工具注册表，查询支付簇、物流轨迹和补贴台账，观察结果写入证据。",
+    visibleData: ["query_payment_cluster", "query_logistics_trace", "query_subsidy_ledger"],
+    tags: ["动作边界", "参数约束", "结果留痕", "证据来源"],
+    techPoint: "OpenCLAW 把 Agent 建议变成有边界、有参数、有日志的受控动作。",
+    nextReason: "所有支持证据、反证和不确定性需要装订成可以交付的证据护照。",
+    action: "query_payment_cluster"
   },
   {
     id: "passport",
-    no: 6,
-    title: "证据护照与人工复核",
-    subtitle: "支持证据、反证、不确定性与人工门禁合成为可复核护照",
-    place: "人工复核塔",
-    action: "emit_passport",
-    guardian: "证据护照 Agent",
-    guardianRole: "生成可追溯、可验证、可分享的结论",
-    x: 83,
-    y: 68,
-    color: "#f7c948",
-    loot: "护照完整度 90%",
-    result: "案件具备复核入口，结论、证据与不确定性同步落章。"
-  },
-  {
-    id: "learning",
     no: 7,
-    title: "模式学习与策略回流",
-    subtitle: "人工确认后的模式进入知识库、案例记忆和策略权重",
-    place: "学习回流炉",
-    action: "compare_promo_cohort",
-    guardian: "智慧图谱书馆",
-    guardianRole: "把一次追证沉淀为下一次更快的判断",
-    x: 93,
-    y: 48,
-    color: "#2ee6a6",
-    loot: "系统进化 +1",
-    result: "风险模式、候选模式、策略权重与案例记忆完成回流。"
+    title: "证据护照与风险分类",
+    shortTitle: "证据护照",
+    place: "证据护照闸门",
+    icon: "章",
+    x: 88,
+    y: 64,
+    color: "#67df91",
+    risk: 0.94,
+    coverage: 1,
+    passportState: "可复核",
+    orderState: "高风险，可复核",
+    thiefState: "被拦截归档",
+    story: "支持证据、反证和不确定性被装订成证据护照，案件进入风险看板和人工复核。",
+    visibleData: ["风险分类：高风险", "证据覆盖：100%", "输出：证据护照 + 人工复核"],
+    tags: ["支持证据", "反证已检索", "不确定性", "人工门禁", "可复核"],
+    techPoint: "最终输出不是一句高风险，而是可解释、可复核、可交付的审计底稿。",
+    nextReason: "人工确认后沉淀到模式库、案例记忆和策略权重，强化下一次审计。",
+    action: "emit_passport"
   }
+];
+
+const dataSources: DataSource[] = [
+  { id: "order", label: "订单", icon: "票", stage: 1, x: 10, y: 34, color: "#5ca8ff", detail: "订单主表、促销窗口、SKU 与账户" },
+  { id: "payment", label: "支付", icon: "卡", stage: 2, x: 21, y: 24, color: "#4eb7ff", detail: "支付工具、账户 hash、card bin" },
+  { id: "refund", label: "退款", icon: "退", stage: 2, x: 31, y: 30, color: "#ff9b4a", detail: "退款比例、时效、售后路径" },
+  { id: "logistics", label: "物流", icon: "车", stage: 2, x: 41, y: 23, color: "#32d8d0", detail: "揽收、签收、轨迹质量、地址关系" },
+  { id: "device", label: "设备", icon: "机", stage: 2, x: 55, y: 25, color: "#b28cff", detail: "设备指纹、root、多账号复用" },
+  { id: "ip", label: "IP", icon: "网", stage: 2, x: 66, y: 30, color: "#2bd8a7", detail: "代理、地理、网段与数据中心特征" },
+  { id: "subsidy", label: "补贴", icon: "券", stage: 2, x: 76, y: 24, color: "#f5ca5b", detail: "资格 key、补贴金额、规则版本" },
+  { id: "counter", label: "反证", icon: "证", stage: 5, x: 91, y: 43, color: "#ffcc79", detail: "同类促销峰值、自然批量履约解释" }
 ];
 
 function App() {
   const [world, setWorld] = useState<WorldData | null>(null);
-  const [difficulty, setDifficulty] = useState<Difficulty>("hard");
-  const [selectedCaseId, setSelectedCaseId] = useState(DIFFICULTY_CASE.hard);
   const [stageIndex, setStageIndex] = useState(0);
   const [autoRun, setAutoRun] = useState(false);
-  const [activeStage, setActiveStage] = useState<Stage | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
 
   useEffect(() => {
     let mounted = true;
     loadWorldData().then((data) => {
-      if (!mounted) return;
-      setWorld(data);
-      if (!data.cases.some((item) => item.case_id === selectedCaseId)) {
-        setSelectedCaseId(data.cases[0]?.case_id ?? DIFFICULTY_CASE.hard);
-      }
+      if (mounted) setWorld(data);
     });
     return () => {
       mounted = false;
     };
-  }, [selectedCaseId]);
+  }, []);
 
   useEffect(() => {
     if (!autoRun) return;
@@ -183,7 +234,7 @@ function App() {
         }
         return current + 1;
       });
-    }, 1800);
+    }, 2200);
     return () => window.clearInterval(timer);
   }, [autoRun]);
 
@@ -191,187 +242,122 @@ function App() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "ArrowRight" || event.key.toLowerCase() === "d") {
         event.preventDefault();
-        setStageIndex((current) => Math.min(stages.length - 1, current + 1));
+        stepBy(1);
       }
       if (event.key === "ArrowLeft" || event.key.toLowerCase() === "a") {
         event.preventDefault();
-        setStageIndex((current) => Math.max(0, current - 1));
+        stepBy(-1);
       }
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
-        setActiveStage(stages[stageIndex]);
+        setDetailOpen(true);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [stageIndex]);
+  }, []);
 
-  const cases = world?.cases ?? [];
   const selectedCase = useMemo(() => {
-    return cases.find((item) => item.case_id === selectedCaseId) ?? cases[0];
-  }, [cases, selectedCaseId]);
+    return world?.cases.find((item) => item.case_id === "AER-001") ?? world?.cases[0];
+  }, [world]);
 
-  const graph = selectedCase ? world?.graphs[selectedCase.case_id] : undefined;
   const route = selectedCase ? world?.routes[selectedCase.case_id] : undefined;
   const passport = selectedCase ? world?.passports[selectedCase.case_id] : undefined;
   const currentStage = stages[stageIndex];
-  const currentAction = route?.ranked_actions[stageIndex]?.action ?? currentStage.action;
-  const catchStage = DIFFICULTY_LABELS[difficulty].catchStage;
-  const thiefHp = Math.max(0, Math.round(100 - ((stageIndex + 1) / catchStage) * 100));
-  const caught = stageIndex + 1 >= catchStage;
-  const riskScore = selectedCase ? getCaseDisplayScore(selectedCase) : 0;
-  const passportScore = route?.coverage.sufficiency_score ?? passport?.sufficiency_score ?? 0;
 
-  const chooseDifficulty = (next: Difficulty) => {
-    setDifficulty(next);
-    setSelectedCaseId(DIFFICULTY_CASE[next]);
-    setStageIndex(0);
+  const stepBy = (delta: number) => {
+    setStageIndex((current) => Math.max(0, Math.min(stages.length - 1, current + delta)));
+    setDetailOpen(false);
     setAutoRun(false);
-    setActiveStage(null);
   };
 
-  const move = (delta: number) => {
-    setStageIndex((current) => Math.max(0, Math.min(stages.length - 1, current + delta)));
+  const goToStage = (index: number) => {
+    setStageIndex(index);
+    setDetailOpen(true);
+    setAutoRun(false);
   };
 
   if (!world || !selectedCase) {
     return (
-      <main className="magic-game loading-screen">
-        <div className="loading-card pixel-frame">
-          <span className="loading-orb" />
+      <main className="audit-game loading-screen">
+        <section className="pixel-panel loading-card">
+          <div className="loading-gem" />
           <h1>Team-I 主动追证剧场</h1>
-          <p>正在点亮多源地层、模型议会与 OpenCLAW 工坊。</p>
-        </div>
+          <p>正在装载订单生命周期、证据网络和受控取证节点。</p>
+        </section>
       </main>
     );
   }
 
   return (
-    <main className="magic-game">
-      <TopHud
-        world={world}
-        difficulty={difficulty}
-        chooseDifficulty={chooseDifficulty}
-        selectedCase={selectedCase}
-        stage={currentStage}
-      />
+    <main className="audit-game">
+      <TopHud world={world} selectedCase={selectedCase} stage={currentStage} />
 
-      <section className="playfield">
-        <aside className="left-stack">
-          <MiniMap stageIndex={stageIndex} />
-          <SourceLedger world={world} />
-          <CurrentActionPanel stage={currentStage} action={currentAction} route={route} />
-        </aside>
-
-        <WorldCanvas
+      <section className="main-stage" aria-label="订单生命周期主动追证地图">
+        <GameWorld
           stageIndex={stageIndex}
           selectedCase={selectedCase}
-          difficulty={difficulty}
-          riskScore={riskScore}
-          passportScore={passportScore}
-          thiefHp={thiefHp}
-          caught={caught}
-          setStageIndex={setStageIndex}
-          openStage={setActiveStage}
+          route={route}
+          passport={passport}
+          onSelectStage={goToStage}
         />
-
-        <aside className="right-stack">
-          <CasePanel selectedCase={selectedCase} difficulty={difficulty} riskScore={riskScore} caught={caught} />
-          <LearningFurnace world={world} selectedCase={selectedCase} />
-          <CapabilityNebula world={world} />
-        </aside>
-      </section>
-
-      <section className="bottom-console">
-        <ModelCouncil world={world} />
-        <OpenClawForge route={route} />
-        <EvidenceContinent graph={graph} selectedCase={selectedCase} />
-        <PassportConsole passport={passport} route={route} selectedCase={selectedCase} />
-        <ExperimentConsole world={world} />
+        <CurrentStagePanel stage={currentStage} route={route} passport={passport} selectedCase={selectedCase} />
       </section>
 
       <ControlBar
+        stageIndex={stageIndex}
         autoRun={autoRun}
         setAutoRun={setAutoRun}
-        move={move}
+        stepBy={stepBy}
         reset={() => {
           setStageIndex(0);
+          setDetailOpen(false);
           setAutoRun(false);
         }}
-        openStage={() => setActiveStage(currentStage)}
-        stage={currentStage}
-        caught={caught}
+        openDetail={() => setDetailOpen(true)}
       />
 
-      {activeStage ? (
-        <StageCodex
-          stage={activeStage}
+      {detailOpen ? (
+        <StageModal
+          stage={currentStage}
           selectedCase={selectedCase}
-          world={world}
-          graph={graph}
           route={route}
           passport={passport}
-          close={() => setActiveStage(null)}
+          close={() => setDetailOpen(false)}
         />
       ) : null}
     </main>
   );
 }
 
-function TopHud({
-  world,
-  difficulty,
-  chooseDifficulty,
-  selectedCase,
-  stage
-}: {
-  world: WorldData;
-  difficulty: Difficulty;
-  chooseDifficulty: (next: Difficulty) => void;
-  selectedCase: AuditCase;
-  stage: Stage;
-}) {
+function TopHud({ world, selectedCase, stage }: { world: WorldData; selectedCase: AuditCase; stage: LifecycleStage }) {
+  const evidenceCount = selectedCase.evidence?.length ?? world.dashboard.evidence_count;
   return (
     <header className="top-hud">
-      <div className="brand-lockup">
-        <div className="team-badge">T-I</div>
+      <div className="brand">
+        <div className="team-mark">T-I</div>
         <div>
           <h1>Team-I 主动追证剧场</h1>
-          <p>OpenCLAW · 多模型协作 · 多源融合 · 证据护照 · 策略回流</p>
+          <p>一笔订单穿越风控系统：数据附着、模式匹配、Agent 追证、受控取证、证据护照</p>
         </div>
       </div>
-      <div className="hud-metrics">
-        <HudMetric icon="⚙" label="风险案例" value={world.dashboard.case_count} />
-        <HudMetric icon="▣" label="证据条目" value={world.dashboard.evidence_count} />
-        <HudMetric icon="✦" label="追踪轨迹" value={world.dashboard.trajectory_count} />
-        <HudMetric icon="☼" label="模型调用" value={sum(world.dashboard.model_invocations.map((item) => item.count))} />
-        <HudMetric icon="●" label="轨迹状态" value="在线" tone="green" />
-      </div>
-      <div className="difficulty-box pixel-frame">
-        <span>当前关卡</span>
-        <strong>{stage.no}/7</strong>
-        <div className="difficulty-tabs" aria-label="Case 难度">
-          {(["easy", "normal", "hard"] as Difficulty[]).map((item) => (
-            <button
-              key={item}
-              type="button"
-              className={item === difficulty ? "active" : ""}
-              onClick={() => chooseDifficulty(item)}
-              aria-pressed={item === difficulty}
-            >
-              {DIFFICULTY_LABELS[item].label}
-            </button>
-          ))}
-        </div>
-        <small>{selectedCase.case_id} · {DIFFICULTY_LABELS[difficulty].note}</small>
+      <div className="hud-board" aria-label="全局状态">
+        <HudMetric label="当前订单" value="AER-001" icon="票" />
+        <HudMetric label="当前阶段" value={`${stage.no}/7`} icon="路" />
+        <HudMetric label="风险分" value={stage.risk.toFixed(2)} icon="险" accent="danger" />
+        <HudMetric label="证据覆盖" value={pct(stage.coverage)} icon="证" accent="safe" />
+        <HudMetric label="护照状态" value={stage.passportState} icon="章" accent={stage.passportState === "可复核" ? "safe" : "gold"} />
+        <HudMetric label="证据条目" value={evidenceCount} icon="卷" />
+        <HudMetric label="风险模式" value={getCasePattern(selectedCase)} icon="库" />
+        <HudMetric label="主线状态" value={stage.no === 7 ? "已拦截" : "追证中"} icon="光" accent={stage.no === 7 ? "safe" : "gold"} />
       </div>
     </header>
   );
 }
 
-function HudMetric({ icon, label, value, tone }: { icon: string; label: string; value: string | number; tone?: string }) {
+function HudMetric({ label, value, icon, accent }: { label: string; value: string | number; icon: string; accent?: "danger" | "safe" | "gold" }) {
   return (
-    <div className={`hud-metric ${tone ?? ""}`}>
+    <div className={`hud-metric ${accent ?? ""}`}>
       <span>{icon}</span>
       <b>{value}</b>
       <small>{label}</small>
@@ -379,939 +365,426 @@ function HudMetric({ icon, label, value, tone }: { icon: string; label: string; 
   );
 }
 
-function WorldCanvas({
+function GameWorld({
   stageIndex,
   selectedCase,
-  difficulty,
-  riskScore,
-  passportScore,
-  thiefHp,
-  caught,
-  setStageIndex,
-  openStage
+  route,
+  passport,
+  onSelectStage
 }: {
   stageIndex: number;
   selectedCase: AuditCase;
-  difficulty: Difficulty;
-  riskScore: number;
-  passportScore: number;
-  thiefHp: number;
-  caught: boolean;
-  setStageIndex: (next: number) => void;
-  openStage: (stage: Stage) => void;
+  route?: RouteInfo;
+  passport?: Passport;
+  onSelectStage: (index: number) => void;
 }) {
-  const active = stages[stageIndex];
+  const stage = stages[stageIndex];
+  const caught = stage.no === 7;
   return (
-    <section className="world-canvas pixel-frame">
-      <div className="sky-glow" />
-      <div className="mountains far" />
-      <div className="mountains near" />
-      <div className="river" />
-      <div className="cloud cloud-a" />
-      <div className="cloud cloud-b" />
-      <div className="airship" />
+    <section className="world pixel-panel">
+      <div className="sky-layer" />
+      <div className="sun-halo" />
+      <div className="city-layer city-back" />
+      <div className="city-layer city-front" />
+      <div className="ground-ribbon" />
 
-      <ScrollBanner
-        title="主动追证魔法世界"
-        subtitle="黑灰产每跨过一道关卡，Team-I 的证据光束就多锁定一次。"
-      />
+      <ScrollBanner />
+      <AgentSun active={stage.no >= 5} target={stage.shortTitle} />
+      <DataSourceLayer stage={stage} />
 
-      <AgentSun stageIndex={stageIndex} />
-
-      <svg className="stage-route" viewBox="0 0 1000 420" preserveAspectRatio="none" aria-hidden="true">
+      <svg className="route-svg" viewBox="0 0 1000 470" preserveAspectRatio="none" aria-hidden="true">
         <path
-          d="M 60 285 C 160 230, 230 265, 300 205 S 450 190, 520 160 S 650 220, 720 210 S 850 280, 950 195"
-          fill="none"
-          stroke="rgba(255, 210, 90, 0.92)"
-          strokeWidth="5"
-          strokeDasharray="8 12"
-          strokeLinecap="round"
+          className="route-shadow"
+          d="M 64 320 C 145 265, 210 264, 278 238 S 408 245, 500 194 S 655 216, 770 277 S 890 245, 956 190"
         />
         <path
-          d="M 60 285 C 160 230, 230 265, 300 205 S 450 190, 520 160 S 650 220, 720 210 S 850 280, 950 195"
-          fill="none"
-          stroke="rgba(44, 232, 214, 0.45)"
-          strokeWidth="11"
-          strokeDasharray="4 18"
-          strokeLinecap="round"
+          className="route-main"
+          d="M 64 320 C 145 265, 210 264, 278 238 S 408 245, 500 194 S 655 216, 770 277 S 890 245, 956 190"
         />
       </svg>
 
-      {stages.map((stage, index) => (
-        <GateNode
-          key={stage.id}
-          stage={stage}
-          index={index}
+      {stages.map((item, index) => (
+        <StageGate
+          key={item.id}
+          stage={item}
           active={index === stageIndex}
           passed={index < stageIndex}
-          onClick={() => {
-            setStageIndex(index);
-            openStage(stage);
-          }}
+          onClick={() => onSelectStage(index)}
         />
       ))}
 
-      <ThiefSprite stage={active} thiefHp={thiefHp} caught={caught} />
-      <RobotPatrol stage={active} />
-
-      <div className="case-card-strip">
-        {[
-          { id: "AER-001", title: "团伙骗补", score: "94%", tone: "red" },
-          { id: "AER-002", title: "空包评论工坊", score: "88%", tone: "blue" },
-          { id: "AER-003", title: "补贴套利观察", score: "72%", tone: "green" }
-        ].map((item) => (
-          <div key={item.id} className={`world-case-card ${item.id === selectedCase.case_id ? "active" : ""} ${item.tone}`}>
-            <span>{item.id}</span>
-            <b>{item.score}</b>
-            <small>{item.title}</small>
-          </div>
-        ))}
-      </div>
-
-      <div className="boss-panel pixel-frame">
-        <span>黑灰产首领</span>
-        <strong>{getCaseTitle(selectedCase)}</strong>
-        <div className="boss-hp">
-          <i style={{ width: `${thiefHp}%` }} />
-        </div>
-        <small>{caught ? "已被锁定归案" : `${DIFFICULTY_LABELS[difficulty].note} · 护照门槛 ${pct(passportScore)}`}</small>
-      </div>
-
-      <div className="world-caption pixel-frame">
-        <b>{active.place}</b>
-        <span>{active.result}</span>
-        <em>{getCasePattern(selectedCase)} · 风险分 {riskScore.toFixed(2)}</em>
-      </div>
+      <OrderSprite stage={stage} passport={passport} />
+      <ThiefSprite stage={stage} caught={caught} />
+      <EvidenceFragments stage={stage} route={route} />
+      <FinalGate active={stage.no === 7} selectedCase={selectedCase} />
+      <LifecycleTelemetry stage={stage} route={route} />
     </section>
   );
 }
 
-function ScrollBanner({ title, subtitle }: { title: string; subtitle: string }) {
+function ScrollBanner() {
   return (
     <div className="scroll-banner">
-      <span className="scroll-cap left" />
+      <span />
       <div>
-        <h2>{title}</h2>
-        <p>{subtitle}</p>
+        <h2>订单生命周期主动追证</h2>
+        <p>跟随 AER-001 从普通大促交易走到可复核风险案件</p>
       </div>
-      <span className="scroll-cap right" />
+      <span />
     </div>
   );
 }
 
-function AgentSun({ stageIndex }: { stageIndex: number }) {
+function AgentSun({ active, target }: { active: boolean; target: string }) {
   return (
-    <div className="agent-sun" aria-label="Agent 主动追证">
-      <span className="ray ray-a" />
-      <span className="ray ray-b" />
-      <span className="ray ray-c" />
-      <span className="sun-face">
-        <i className="eye left" />
-        <i className="eye right" />
-        <i className="mouth" />
-      </span>
+    <div className={`agent-sun ${active ? "active" : ""}`} aria-label="Agent 主动追证太阳">
+      <i className="ray ray-one" />
+      <i className="ray ray-two" />
+      <i className="ray ray-three" />
+      <div className="sun-face">
+        <span className="eye left" />
+        <span className="eye right" />
+        <span className="mouth" />
+      </div>
       <strong>Agent 主动追证</strong>
-      <small>光束 {stageIndex + 1}/7</small>
+      <small>{active ? `锁定：${target}` : "等待证据缺口"}</small>
     </div>
   );
 }
 
-function GateNode({
-  stage,
-  index,
-  active,
-  passed,
-  onClick
-}: {
-  stage: Stage;
-  index: number;
-  active: boolean;
-  passed: boolean;
-  onClick: () => void;
-}) {
-  const style = {
-    left: `${stage.x}%`,
-    top: `${stage.y}%`,
-    "--stage-color": stage.color
-  } as React.CSSProperties;
+function DataSourceLayer({ stage }: { stage: LifecycleStage }) {
+  const orderX = stage.x * 10;
+  const orderY = stage.y * 4.7;
+  return (
+    <>
+      <svg className="data-lines" viewBox="0 0 1000 470" preserveAspectRatio="none" aria-hidden="true">
+        {dataSources.map((source) => {
+          const active = stage.no >= source.stage;
+          return (
+            <path
+              key={source.id}
+              className={active ? "active" : ""}
+              d={`M ${source.x * 10} ${source.y * 4.7} C ${(source.x * 10 + orderX) / 2} ${source.y * 4.7 - 65}, ${(source.x * 10 + orderX) / 2} ${orderY - 72}, ${orderX} ${orderY}`}
+              style={{ "--source-color": source.color } as CSSProperties}
+            />
+          );
+        })}
+      </svg>
+      {dataSources.map((source) => {
+        const active = stage.no >= source.stage;
+        return (
+          <div
+            key={source.id}
+            className={`data-chip ${active ? "active" : ""}`}
+            style={{ left: `${source.x}%`, top: `${source.y}%`, "--source-color": source.color } as CSSProperties}
+            title={source.detail}
+          >
+            <b>{source.icon}</b>
+            <span>{source.label}</span>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+function StageGate({ stage, active, passed, onClick }: { stage: LifecycleStage; active: boolean; passed: boolean; onClick: () => void }) {
   return (
     <button
       type="button"
-      className={`gate-node ${active ? "active" : ""} ${passed ? "passed" : ""}`}
-      style={style}
+      className={`stage-gate ${active ? "active" : ""} ${passed ? "passed" : ""}`}
+      style={{ left: `${stage.x}%`, top: `${stage.y}%`, "--stage-color": stage.color } as CSSProperties}
       onClick={onClick}
-      aria-label={`打开关卡 ${stage.no} ${stage.title}`}
+      aria-label={`查看 ${stage.title}`}
     >
-      <span className="gate-number">{stage.no}</span>
-      <b>{stage.title}</b>
-      <small>{stage.guardian}</small>
-      <i>{index < 3 ? "证据" : index < 5 ? "Agent" : "回流"}</i>
+      <i>{stage.icon}</i>
+      <span>{stage.no}</span>
+      <b>{stage.shortTitle}</b>
     </button>
   );
 }
 
-function ThiefSprite({ stage, thiefHp, caught }: { stage: Stage; thiefHp: number; caught: boolean }) {
+function OrderSprite({ stage, passport }: { stage: LifecycleStage; passport?: Passport }) {
   const style = {
-    left: `calc(${stage.x}% - 34px)`,
-    top: `calc(${stage.y}% - 88px)`
-  } as React.CSSProperties;
+    left: stage.no === 7 ? `calc(${stage.x}% - 28px)` : `calc(${stage.x}% + 4px)`,
+    top: stage.no === 7 ? `calc(${stage.y}% + 58px)` : `calc(${stage.y}% + 34px)`
+  } as CSSProperties;
   return (
-    <div className={`thief-wrap ${caught ? "caught" : ""}`} style={style}>
-      <div className="speech-bubble">{caught ? "证据闭环，跑不掉了！" : thiefHp < 45 ? "糟糕，被追上了！" : "先溜过这关！"}</div>
-      <div className="thief-sprite" aria-label="黑灰产小偷">
+    <div className={`order-sprite stage-${stage.no}`} style={style} aria-label="可疑订单">
+      <div className="order-paper">
+        <b>{stage.no === 7 ? "PASS" : "ORD"}</b>
+        <span>{stage.no === 7 ? pct(passport?.sufficiency_score ?? 0.9) : "AER-001"}</span>
+      </div>
+      {stage.no >= 2 ? <span className="order-tag tag-a">支付</span> : null}
+      {stage.no >= 2 ? <span className="order-tag tag-b">物流</span> : null}
+      {stage.no >= 3 ? <span className="order-tag tag-c">退款</span> : null}
+      {stage.no >= 4 ? <span className="order-tag tag-d">补贴</span> : null}
+    </div>
+  );
+}
+
+function ThiefSprite({ stage, caught }: { stage: LifecycleStage; caught: boolean }) {
+  const style = {
+    left: stage.no === 7 ? `calc(${stage.x}% - 105px)` : `calc(${stage.x}% - 52px)`,
+    top: stage.no === 7 ? `calc(${stage.y}% - 34px)` : `calc(${stage.y}% - 78px)`
+  } as CSSProperties;
+  return (
+    <div className={`thief-wrap ${caught ? "caught" : ""}`} style={style} aria-label="黑灰产小偷">
+      <div className="speech">{caught ? "证据闭环，跑不掉了！" : stage.no >= 5 ? "糟糕，被锁定了！" : "伪装成正常订单..."}</div>
+      <div className="thief">
         <span className="hat" />
         <span className="head" />
         <span className="mask" />
         <span className="body" />
         <span className="bag" />
-        <span className="arm arm-left" />
-        <span className="arm arm-right" />
-        <span className="leg leg-left" />
-        <span className="leg leg-right" />
+        <span className="arm left" />
+        <span className="arm right" />
+        <span className="leg left" />
+        <span className="leg right" />
       </div>
-      <div className="dust dust-a" />
-      <div className="dust dust-b" />
+      <span className="dust one" />
+      <span className="dust two" />
     </div>
   );
 }
 
-function RobotPatrol({ stage }: { stage: Stage }) {
-  const style = {
-    left: `calc(${Math.min(95, stage.x + 7)}% - 24px)`,
-    top: `calc(${Math.max(18, stage.y - 22)}% - 20px)`
-  } as React.CSSProperties;
+function EvidenceFragments({ stage, route }: { stage: LifecycleStage; route?: RouteInfo }) {
+  if (stage.no < 3) return null;
+  const covered = route?.coverage.covered ?? ["统计异常", "关系扩展", "物流校验", "资金链", "反证", "护照"];
+  const visible = covered.slice(0, Math.min(covered.length, Math.max(2, stage.no)));
   return (
-    <div className="robot-patrol" style={style}>
-      <span className="antenna" />
-      <span className="visor" />
-      <span className="body" />
-      <small>{stage.guardian.split(" ")[0]}</small>
+    <div className="evidence-fragments" aria-label="证据碎片">
+      {visible.map((item, index) => (
+        <span key={item} style={{ "--delay": `${index * 0.12}s` } as CSSProperties}>
+          {item}
+        </span>
+      ))}
     </div>
   );
 }
 
-function MiniMap({ stageIndex }: { stageIndex: number }) {
+function FinalGate({ active, selectedCase }: { active: boolean; selectedCase: AuditCase }) {
   return (
-    <section className="side-card minimap-card pixel-frame">
-      <header>
-        <h3>世界地图</h3>
-        <span>{stageIndex + 1}/7</span>
-      </header>
-      <svg viewBox="0 0 260 150" className="minimap">
-        <defs>
-          <linearGradient id="mapGlow" x1="0" x2="1">
-            <stop offset="0" stopColor="#ffe08a" />
-            <stop offset="1" stopColor="#3debd7" />
-          </linearGradient>
-        </defs>
-        <path d="M24 108 C54 74 80 95 104 54 S160 60 176 42 S216 82 234 34" fill="none" stroke="url(#mapGlow)" strokeWidth="4" strokeDasharray="7 6" />
-        {stages.map((stage, index) => (
-          <g key={stage.id}>
-            <circle
-              cx={24 + index * 35}
-              cy={index % 2 ? 76 - index * 4 : 108 - index * 9}
-              r={index === stageIndex ? 10 : 7}
-              fill={index <= stageIndex ? stage.color : "#142b45"}
-              stroke="#f5c46b"
-              strokeWidth="2"
-            />
-            <text x={24 + index * 35} y={(index % 2 ? 80 - index * 4 : 112 - index * 9)} textAnchor="middle">
-              {stage.no}
-            </text>
-          </g>
-        ))}
-      </svg>
-    </section>
+    <div className={`final-gate ${active ? "active" : ""}`}>
+      <div className="passport-book">
+        <b>证据护照</b>
+        <strong>{active ? "可复核" : "构建中"}</strong>
+        <span>{getCasePattern(selectedCase)}</span>
+      </div>
+      <a href={DASHBOARD_URL} target="_blank" rel="noreferrer">
+        查看风险看板
+      </a>
+    </div>
   );
 }
 
-function SourceLedger({ world }: { world: WorldData }) {
-  const rows = [
-    ["订单 / 支付", "128K"],
-    ["退款 / 售后", "32K"],
-    ["物流轨迹", "84K"],
-    ["评论内容", "212K"],
-    ["设备 / IP", "211K"],
-    ["补贴台账", "23K"]
+function LifecycleTelemetry({ stage, route }: { stage: LifecycleStage; route?: RouteInfo }) {
+  const action = stage.action ?? route?.ranked_actions[0]?.action;
+  const sourceText =
+    stage.no >= 2 ? "订单 / 支付 / 退款 / 物流 / 评论 / 设备 / IP / 补贴" : "订单主表 / 促销窗口 / SKU / 账户";
+  const evidenceText =
+    stage.no >= 7 ? "支持证据 + 反证 + 不确定性已装订" : stage.no >= 5 ? "证据缺口正在补齐" : "等待风险信号收敛";
+  const outputText = stage.no >= 7 ? "风险看板 + 人工复核 + 模式沉淀" : stage.passportState;
+  const cards = [
+    { label: "数据流转", value: sourceText },
+    { label: "当前风险", value: `${stage.risk.toFixed(2)} / ${stage.orderState}` },
+    { label: "追证动作", value: stage.no >= 5 && action ? getActionLabel(action) : "由证据缺口驱动" },
+    { label: "交付输出", value: outputText }
   ];
   return (
-    <section className="side-card pixel-frame">
-      <header>
-        <h3>多源地层</h3>
-        <span>{world.dashboard.evidence_count} 证据</span>
-      </header>
-      <div className="source-grid">
-        {rows.map(([label, value], index) => (
-          <div key={label}>
-            <i style={{ "--delay": `${index * 0.08}s` } as React.CSSProperties} />
-            <span>{label}</span>
-            <b>{value}</b>
-          </div>
-        ))}
-      </div>
-      <ProgressLine label="数据完整度" value={0.88} />
-    </section>
-  );
-}
-
-function CurrentActionPanel({ stage, action, route }: { stage: Stage; action: string; route?: RouteInfo }) {
-  const ranked = route?.ranked_actions.slice(0, 3) ?? [];
-  return (
-    <section className="side-card pixel-frame">
-      <header>
-        <h3>当前动作</h3>
-        <span>{stage.no}</span>
-      </header>
-      <div className="action-orb">
-        <span />
-        <b>{getActionLabel(action)}</b>
-      </div>
-      <p>{getActionDescription(action)}</p>
-      <div className="rank-list">
-        {ranked.map((item) => (
-          <div key={item.action}>
-            <span>{getActionLabel(item.action)}</span>
-            <b>{safeRatio(item.score).toFixed(2)}</b>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function CasePanel({
-  selectedCase,
-  difficulty,
-  riskScore,
-  caught
-}: {
-  selectedCase: AuditCase;
-  difficulty: Difficulty;
-  riskScore: number;
-  caught: boolean;
-}) {
-  return (
-    <section className="side-card case-panel pixel-frame">
-      <header>
-        <h3>当前 Case</h3>
-        <span>{caught ? "已锁定" : "追证中"}</span>
-      </header>
-      <strong>{selectedCase.case_id}</strong>
-      <h4>{getCaseTitle(selectedCase)}</h4>
-      <p>{getCaseSummary(selectedCase)}</p>
-      <ProgressLine label="风险分" value={riskScore} danger />
-      <ProgressLine label="追证强度" value={difficulty === "hard" ? 0.96 : difficulty === "normal" ? 0.78 : 0.48} />
-      <div className="stars" aria-label="风险星级">
-        {Array.from({ length: 5 }).map((_, index) => (
-          <i key={index} className={index < Math.ceil(riskScore * 5) ? "lit" : ""}>★</i>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function LearningFurnace({ world, selectedCase }: { world: WorldData; selectedCase: AuditCase }) {
-  const candidates = world.candidates.slice(0, 3);
-  return (
-    <section className="side-card furnace-card pixel-frame">
-      <header>
-        <h3>学习回流炉</h3>
-        <span>{world.policyWeights.length} 权重</span>
-      </header>
-      <div className="furnace">
-        <span className="flame" />
-        <b>模式库</b>
-      </div>
-      <div className="candidate-list">
-        {candidates.map((candidate) => (
-          <div key={candidate.candidate_id}>
-            <b>{candidate.candidate_id}</b>
-            <span>{candidate.status}</span>
-          </div>
-        ))}
-        <div>
-          <b>{getCasePattern(selectedCase)}</b>
-          <span>case_memory</span>
+    <div className="telemetry-strip" aria-label="订单数据流转状态">
+      {cards.map((card) => (
+        <div className="telemetry-card" key={card.label}>
+          <span>{card.label}</span>
+          <b>{card.value}</b>
         </div>
+      ))}
+      <div className="telemetry-progress">
+        <i style={{ width: `${Math.max(12, stage.coverage * 100)}%` }} />
+        <em>{evidenceText}</em>
       </div>
-    </section>
+    </div>
   );
 }
 
-function CapabilityNebula({ world }: { world: WorldData }) {
-  const rows = world.experiments.capability.slice(-6);
+function CurrentStagePanel({
+  stage,
+  route,
+  passport,
+  selectedCase
+}: {
+  stage: LifecycleStage;
+  route?: RouteInfo;
+  passport?: Passport;
+  selectedCase: AuditCase;
+}) {
+  const action = stage.action ?? route?.ranked_actions[0]?.action;
   return (
-    <section className="side-card pixel-frame">
-      <header>
-        <h3>能力星轨</h3>
-        <span>Team-I</span>
-      </header>
-      <RadarMini rows={rows} />
-    </section>
-  );
-}
-
-function ModelCouncil({ world }: { world: WorldData }) {
-  const invocations = world.dashboard.model_invocations.slice(0, 4);
-  return (
-    <section className="console-card pixel-frame">
-      <header>
-        <h3>模型议会</h3>
-        <span>{world.dashboard.model_backend}</span>
-      </header>
-      <div className="agent-grid">
-        {invocations.map((item) => {
-          const meta = agentLabels[item.agent_id] ?? { label: item.agent_id, model: item.model, color: "#6ac7ff", role: "" };
-          return (
-            <div key={item.agent_id} className="agent-tile">
-              <i style={{ background: meta.color }} />
-              <b>{meta.label}</b>
-              <span>{meta.model || item.model}</span>
-              <ProgressLine value={Math.min(1, item.count / 24)} label={`${item.count} 次调用`} compact />
-            </div>
-          );
-        })}
+    <aside className="stage-panel pixel-panel">
+      <div className="stage-kicker">当前节点 {stage.no}/7</div>
+      <h2>{stage.title}</h2>
+      <p>{stage.story}</p>
+      <div className="stage-status-grid">
+        <StatusTile label="订单状态" value={stage.orderState} />
+        <StatusTile label="黑灰产状态" value={stage.thiefState} />
+        <StatusTile label="风险分" value={stage.risk.toFixed(2)} danger />
+        <StatusTile label="证据覆盖" value={pct(stage.coverage)} safe />
       </div>
-    </section>
-  );
-}
-
-function OpenClawForge({ route }: { route?: RouteInfo }) {
-  const actions = route?.ranked_actions.slice(0, 8).map((item) => item.action) ?? Object.keys(actionLabels).slice(0, 8);
-  return (
-    <section className="console-card pixel-frame">
-      <header>
-        <h3>OpenCLAW 工坊</h3>
-        <span>受控动作</span>
-      </header>
-      <div className="forge-grid">
-        {actions.map((action, index) => (
-          <div key={action}>
-            <b>{String(index + 1).padStart(2, "0")}</b>
-            <span>{getActionLabel(action)}</span>
-          </div>
+      <div className="tag-cloud">
+        {stage.tags.map((tag) => (
+          <span key={tag}>{tag}</span>
         ))}
       </div>
-    </section>
-  );
-}
-
-function EvidenceContinent({ graph, selectedCase }: { graph?: CaseGraph; selectedCase: AuditCase }) {
-  return (
-    <section className="console-card pixel-frame">
-      <header>
-        <h3>证据大陆</h3>
-        <span>{graph?.nodes.length ?? 0} 节点</span>
-      </header>
-      <MiniEvidenceGraph graph={graph} center={selectedCase.case_id} />
-    </section>
-  );
-}
-
-function PassportConsole({ passport, route, selectedCase }: { passport?: Passport; route?: RouteInfo; selectedCase: AuditCase }) {
-  const score = route?.coverage.sufficiency_score ?? passport?.sufficiency_score ?? 0;
-  return (
-    <section className="console-card passport-mini pixel-frame">
-      <header>
-        <h3>证据护照</h3>
-        <span>{score >= 0.8 ? "可复核" : "追证中"}</span>
-      </header>
-      <div className="passport-stamp">
-        <b>{pct(score)}</b>
-        <span>{selectedCase.case_id}</span>
+      <div className="action-card">
+        <b>{stage.no >= 6 ? "当前受控动作" : "下一步原因"}</b>
+        <strong>{stage.no >= 6 ? getActionLabel(action) : stage.nextReason}</strong>
+        <small>{stage.no >= 6 ? getActionDescription(action) : stage.techPoint}</small>
       </div>
-      <small>{passport?.conclusion ?? "证据持续汇聚中"}</small>
-    </section>
+      <div className="passport-mini">
+        <span>护照充分性</span>
+        <Progress value={stage.no === 7 ? passport?.sufficiency_score ?? stage.coverage : stage.coverage} />
+        <b>{selectedCase.case_id} · {stage.passportState}</b>
+      </div>
+    </aside>
   );
 }
 
-function ExperimentConsole({ world }: { world: WorldData }) {
+function StatusTile({ label, value, danger, safe }: { label: string; value: string; danger?: boolean; safe?: boolean }) {
   return (
-    <section className="console-card pixel-frame">
-      <header>
-        <h3>追证能量曲线</h3>
-        <span>实验仪表</span>
-      </header>
-      <SparkLine rows={world.experiments.activeRetrieval} />
-    </section>
+    <div className={`status-tile ${danger ? "danger" : ""} ${safe ? "safe" : ""}`}>
+      <span>{label}</span>
+      <b>{value}</b>
+    </div>
+  );
+}
+
+function Progress({ value }: { value: number }) {
+  const clamped = Math.max(0, Math.min(1, value));
+  return (
+    <div className="progress">
+      <i style={{ width: `${clamped * 100}%` }} />
+    </div>
   );
 }
 
 function ControlBar({
+  stageIndex,
   autoRun,
   setAutoRun,
-  move,
+  stepBy,
   reset,
-  openStage,
-  stage,
-  caught
+  openDetail
 }: {
+  stageIndex: number;
   autoRun: boolean;
   setAutoRun: (value: boolean) => void;
-  move: (delta: number) => void;
+  stepBy: (delta: number) => void;
   reset: () => void;
-  openStage: () => void;
-  stage: Stage;
-  caught: boolean;
+  openDetail: () => void;
 }) {
   return (
     <footer className="control-bar">
-      <div className="hero-status">
-        <div className="auditor-avatar">审</div>
-        <div>
-          <strong>审计学徒 Lv.18</strong>
-          <span>{caught ? "黑灰产已锁定" : `${stage.title} · ${stage.loot}`}</span>
-        </div>
-      </div>
-      <div className="skill-slots" aria-label="技能槽">
-        {["Q", "W", "E", "R"].map((key, index) => (
-          <button key={key} type="button" title={`技能 ${key}`}>
-            <i>{index + 1}</i>
-            <span>{key}</span>
-          </button>
+      <div className="timeline">
+        {stages.map((stage, index) => (
+          <div key={stage.id} className={index <= stageIndex ? "active" : ""}>
+            <span>{stage.no}</span>
+            <b>{stage.shortTitle}</b>
+          </div>
         ))}
       </div>
-      <div className="inventory">
-        <span>证据放大镜 ×2</span>
-        <span>审计罗盘 ×1</span>
-        <span>策略芯片 ×3</span>
-      </div>
-      <div className="game-buttons">
+      <div className="buttons">
         <button type="button" className={autoRun ? "active" : ""} onClick={() => setAutoRun(!autoRun)}>
-          ▶ 自动跑
+          {autoRun ? "暂停" : "自动播放"}
         </button>
-        <button type="button" onClick={() => move(-1)}>← 后退</button>
-        <button type="button" onClick={() => move(1)}>前进 →</button>
-        <button type="button" className="primary" onClick={openStage}>打开关卡</button>
-        <button type="button" onClick={reset}>重开</button>
+        <button type="button" onClick={() => stepBy(-1)} disabled={stageIndex === 0}>
+          上一步
+        </button>
+        <button type="button" onClick={() => stepBy(1)} disabled={stageIndex === stages.length - 1}>
+          下一步
+        </button>
+        <button type="button" className="primary" onClick={openDetail}>
+          打开当前节点
+        </button>
+        <button type="button" onClick={reset}>
+          重置
+        </button>
       </div>
     </footer>
   );
 }
 
-function StageCodex({
+function StageModal({
   stage,
   selectedCase,
-  world,
-  graph,
   route,
   passport,
   close
 }: {
-  stage: Stage;
+  stage: LifecycleStage;
   selectedCase: AuditCase;
-  world: WorldData;
-  graph?: CaseGraph;
   route?: RouteInfo;
   passport?: Passport;
   close: () => void;
 }) {
+  const action = stage.action ?? route?.ranked_actions[0]?.action;
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true">
-      <section className="stage-codex pixel-frame">
-        <button className="modal-close" type="button" onClick={close} aria-label="关闭关卡详情">×</button>
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="stage-modal-title">
+      <section className="stage-modal pixel-panel">
+        <button type="button" className="close-button" onClick={close} aria-label="关闭节点详情">
+          ×
+        </button>
         <header>
-          <span>关卡 {stage.no}</span>
-          <h2>{stage.title}</h2>
-          <p>{stage.subtitle}</p>
+          <span>第 {stage.no} 站 · {stage.place}</span>
+          <h2 id="stage-modal-title">{stage.title}</h2>
+          <p>{stage.story}</p>
         </header>
-        <div className="codex-body">
-          <div className="codex-main">
-            <StageVisual stage={stage} world={world} graph={graph} route={route} passport={passport} selectedCase={selectedCase} />
+        <div className="modal-grid">
+          <div className="modal-section">
+            <h3>这一站看到的数据</h3>
+            <ul>
+              {stage.visibleData.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
           </div>
-          <aside className="codex-side">
-            <h3>{stage.guardian}</h3>
-            <p>{stage.guardianRole}</p>
-            <div className="codex-outcome">
-              <b>{stage.loot}</b>
-              <span>{stage.result}</span>
+          <div className="modal-section">
+            <h3>为什么进入下一步</h3>
+            <p>{stage.nextReason}</p>
+          </div>
+          <div className="modal-section">
+            <h3>当前技术点</h3>
+            <p>{stage.techPoint}</p>
+          </div>
+          <div className="modal-visual">
+            <div className="mini-bars">
+              <MiniBar label="风险分" value={stage.risk} danger />
+              <MiniBar label="证据覆盖" value={stage.coverage} />
+              <MiniBar label="护照充分性" value={stage.no === 7 ? passport?.sufficiency_score ?? 0.9 : stage.coverage} />
             </div>
-            <div className="codex-kv">
-              <span>受控动作</span>
-              <b>{getActionLabel(stage.action)}</b>
-              <span>案件</span>
-              <b>{selectedCase.case_id} · {getCasePattern(selectedCase)}</b>
-              <span>风险级别</span>
-              <b>{getCaseDisplayLevel(selectedCase)}</b>
+            <div className="modal-action">
+              <span>{stage.no >= 6 ? "OpenCLAW 动作" : "追证动作"}</span>
+              <b>{getActionLabel(action)}</b>
+              <small>{getCaseTitle(selectedCase)} · {getCasePattern(selectedCase)}</small>
             </div>
-          </aside>
+          </div>
         </div>
       </section>
     </div>
   );
 }
 
-function StageVisual({
-  stage,
-  world,
-  graph,
-  route,
-  passport,
-  selectedCase
-}: {
-  stage: Stage;
-  world: WorldData;
-  graph?: CaseGraph;
-  route?: RouteInfo;
-  passport?: Passport;
-  selectedCase: AuditCase;
-}) {
-  if (stage.id === "risk-space") {
-    return <SignalBoard selectedCase={selectedCase} />;
-  }
-  if (stage.id === "source-ingest") {
-    return <SourceAblation rows={world.experiments.multisource} />;
-  }
-  if (stage.id === "fusion") {
-    return <BigEvidenceMap graph={graph} selectedCase={selectedCase} />;
-  }
-  if (stage.id === "agent-sun") {
-    return <ActiveRetrievalChart rows={world.experiments.activeRetrieval} />;
-  }
-  if (stage.id === "openclaw") {
-    return <GovernanceForge rows={world.experiments.governance} route={route} />;
-  }
-  if (stage.id === "passport") {
-    return <EvidencePassport passport={passport} route={route} selectedCase={selectedCase} />;
-  }
-  return <LearningWriteback world={world} />;
-}
-
-function SignalBoard({ selectedCase }: { selectedCase: AuditCase }) {
-  const scores = selectedCase.scores ?? {};
-  const rows = [
-    ["统计异常", scores.statistical ?? 0.84],
-    ["关系风险", scores.relational ?? 0.78],
-    ["语义异常", scores.semantic ?? 0.72],
-    ["反证余量", scores.counter ?? 0.32]
-  ];
+function MiniBar({ label, value, danger }: { label: string; value: number; danger?: boolean }) {
   return (
-    <div className="signal-board codex-panel">
-      <div className="pixel-thief-card">
-        <ThiefIcon />
-        <strong>{getCaseTitle(selectedCase)}</strong>
-        <span>{getCaseSummary(selectedCase)}</span>
-      </div>
-      <div className="signal-bars">
-        {rows.map(([label, raw]) => {
-          const value = Number(raw);
-          return <ProgressLine key={String(label)} label={String(label)} value={value} danger={value > 0.8} />;
-        })}
-      </div>
-    </div>
-  );
-}
-
-function SourceAblation({ rows }: { rows: CsvRow[] }) {
-  return (
-    <div className="codex-panel">
-      <h3>来源地层叠加</h3>
-      <VerticalBars rows={rows} labelKeys={["stage", "source"]} valueKeys={["sufficiency_mean", "dimension_coverage_mean"]} />
-    </div>
-  );
-}
-
-function BigEvidenceMap({ graph, selectedCase }: { graph?: CaseGraph; selectedCase: AuditCase }) {
-  return (
-    <div className="codex-panel big-map">
-      <h3>证据关系图谱</h3>
-      <MiniEvidenceGraph graph={graph} center={selectedCase.case_id} large />
-    </div>
-  );
-}
-
-function ActiveRetrievalChart({ rows }: { rows: CsvRow[] }) {
-  return (
-    <div className="codex-panel">
-      <h3>主动追证能量曲线</h3>
-      <LineChart rows={rows} />
-    </div>
-  );
-}
-
-function GovernanceForge({ rows, route }: { rows: CsvRow[]; route?: RouteInfo }) {
-  return (
-    <div className="codex-panel forge-visual">
-      <div>
-        <h3>受控动作热区</h3>
-        <div className="governance-grid">
-          {(route?.ranked_actions ?? []).slice(0, 12).map((item, index) => (
-            <span key={item.action} style={{ opacity: 0.55 + safeRatio(item.score) * 0.4 }}>
-              {index + 1}
-            </span>
-          ))}
-        </div>
-      </div>
-      <div>
-        <h3>治理风险压降</h3>
-        <VerticalBars rows={rows} labelKeys={["action"]} valueKeys={["governed_risk", "raw_risk"]} />
-      </div>
-    </div>
-  );
-}
-
-function EvidencePassport({
-  passport,
-  route,
-  selectedCase
-}: {
-  passport?: Passport;
-  route?: RouteInfo;
-  selectedCase: AuditCase;
-}) {
-  const required = route?.coverage.required ?? passport?.required ?? [];
-  const covered = route?.coverage.covered ?? passport?.covered ?? [];
-  const score = route?.coverage.sufficiency_score ?? passport?.sufficiency_score ?? 0;
-  return (
-    <div className="codex-panel passport-full">
-      <div className="big-passport">
-        <span>证据护照</span>
-        <strong>{pct(score)}</strong>
-        <b>{selectedCase.case_id}</b>
-        <em>{score >= 0.8 ? "人工复核通过门槛" : "继续追证"}</em>
-      </div>
-      <div className="passport-checks">
-        {required.map((item) => (
-          <div key={item} className={covered.includes(item) ? "covered" : ""}>
-            <i>{covered.includes(item) ? "✓" : "□"}</i>
-            <span>{item}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function LearningWriteback({ world }: { world: WorldData }) {
-  return (
-    <div className="codex-panel learning-visual">
-      <div>
-        <h3>写回计数</h3>
-        <VerticalBars rows={world.experiments.learningCounts} labelKeys={["target"]} valueKeys={["after", "before"]} />
-      </div>
-      <div>
-        <h3>策略权重</h3>
-        <VerticalBars rows={world.experiments.learningWeights} labelKeys={["action"]} valueKeys={["after", "before"]} />
-      </div>
-      <div>
-        <h3>处理效率</h3>
-        <VerticalBars rows={world.experiments.efficiency} labelKeys={["method"]} valueKeys={["cases_per_analyst_day", "cases_per_hour"]} />
-      </div>
-    </div>
-  );
-}
-
-function MiniEvidenceGraph({ graph, center, large = false }: { graph?: CaseGraph; center: string; large?: boolean }) {
-  const nodes = graph?.nodes.slice(0, large ? 22 : 12) ?? [];
-  const size = large ? 520 : 260;
-  const radius = large ? 190 : 92;
-  const cx = size / 2;
-  const cy = large ? 210 : 92;
-  const positioned = nodes.map((node, index) => {
-    if (index === 0) return { node, x: cx, y: cy };
-    const angle = ((index - 1) / Math.max(1, nodes.length - 1)) * Math.PI * 2 - Math.PI / 2;
-    return { node, x: cx + Math.cos(angle) * radius, y: cy + Math.sin(angle) * radius };
-  });
-  return (
-    <svg className={`evidence-graph ${large ? "large" : ""}`} viewBox={`0 0 ${size} ${large ? 390 : 190}`}>
-      {positioned.slice(1).map((point) => (
-        <line key={`${center}-${point.node.id}`} x1={cx} y1={cy} x2={point.x} y2={point.y} />
-      ))}
-      {positioned.map((point, index) => (
-        <g key={point.node.id}>
-          <circle className={index === 0 ? "center" : ""} cx={point.x} cy={point.y} r={index === 0 ? 14 : 7} />
-          <text x={point.x} y={point.y + (index === 0 ? 30 : 18)} textAnchor="middle">
-            {index === 0 ? center : compactLabel(point.node.label ?? point.node.id)}
-          </text>
-        </g>
-      ))}
-    </svg>
-  );
-}
-
-function ProgressLine({
-  label,
-  value,
-  danger,
-  compact
-}: {
-  label: string;
-  value: number;
-  danger?: boolean;
-  compact?: boolean;
-}) {
-  const clamped = Math.max(0, Math.min(1, value));
-  return (
-    <div className={`progress-line ${danger ? "danger" : ""} ${compact ? "compact" : ""}`}>
+    <div className={`mini-bar ${danger ? "danger" : ""}`}>
       <span>{label}</span>
-      <div>
-        <i style={{ width: `${clamped * 100}%` }} />
-      </div>
-      {!compact ? <b>{pct(clamped)}</b> : null}
+      <Progress value={value} />
+      <b>{value > 1 ? value : danger ? value.toFixed(2) : pct(value)}</b>
     </div>
   );
-}
-
-function SparkLine({ rows }: { rows: CsvRow[] }) {
-  const data = rows
-    .filter((row) => /Team-I|主动追证/.test(row.method ?? ""))
-    .slice(0, 8)
-    .map((row, index) => ({ x: index, y: numeric(row, ["sufficiency_mean", "passport_ready_rate"]) }));
-  const points = makePolyline(data, 280, 88, 12);
-  return (
-    <svg className="spark-chart" viewBox="0 0 300 110">
-      <polyline points={points} />
-      {data.map((item, index) => (
-        <circle key={`${item.x}-${index}`} cx={12 + (index / Math.max(1, data.length - 1)) * 276} cy={98 - item.y * 76} r="4" />
-      ))}
-    </svg>
-  );
-}
-
-function LineChart({ rows }: { rows: CsvRow[] }) {
-  const grouped = groupBy(rows, "method");
-  const entries = Object.entries(grouped).slice(-4);
-  return (
-    <svg className="line-chart" viewBox="0 0 720 360">
-      <g className="grid">
-        {[0, 1, 2, 3, 4].map((index) => (
-          <line key={index} x1="48" x2="690" y1={50 + index * 58} y2={50 + index * 58} />
-        ))}
-      </g>
-      {entries.map(([method, methodRows], index) => {
-        const data = methodRows.slice(0, 12).map((row, rowIndex) => ({
-          x: numeric(row, ["step"], rowIndex),
-          y: numeric(row, ["sufficiency_mean", "passport_ready_rate"])
-        }));
-        return (
-          <g key={method} className={`line-series series-${index}`}>
-            <polyline points={makePolyline(data, 620, 250, 50)} />
-            <text x="58" y={22 + index * 16}>{method}</text>
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
-
-function VerticalBars({ rows, labelKeys, valueKeys }: { rows: CsvRow[]; labelKeys: string[]; valueKeys: string[] }) {
-  const sliced = rows.slice(0, 6);
-  const values = sliced.map((row) => numeric(row, valueKeys));
-  const max = Math.max(1, ...values);
-  return (
-    <div className="vertical-bars">
-      {sliced.map((row, index) => {
-        const value = numeric(row, valueKeys);
-        const label = firstText(row, labelKeys) || `#${index + 1}`;
-        return (
-          <div key={`${label}-${index}`} className="vbar">
-            <div>
-              <i style={{ height: `${Math.max(8, (value / max) * 100)}%` }} />
-            </div>
-            <span>{label}</span>
-            <b>{value > 1 ? Math.round(value) : pct(value)}</b>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function RadarMini({ rows }: { rows: CsvRow[] }) {
-  const teamRows = rows.filter((row) => /Team-I/.test(row.method ?? "")).slice(0, 6);
-  const points = teamRows.map((row, index) => {
-    const angle = (index / Math.max(1, teamRows.length)) * Math.PI * 2 - Math.PI / 2;
-    const value = numeric(row, ["score"]) / 100;
-    const x = 80 + Math.cos(angle) * 62 * value;
-    const y = 68 + Math.sin(angle) * 52 * value;
-    return `${x},${y}`;
-  });
-  return (
-    <svg className="radar-mini" viewBox="0 0 160 135">
-      {[0.25, 0.5, 0.75, 1].map((scale) => (
-        <polygon
-          key={scale}
-          points={Array.from({ length: 6 })
-            .map((_, index) => {
-              const angle = (index / 6) * Math.PI * 2 - Math.PI / 2;
-              return `${80 + Math.cos(angle) * 62 * scale},${68 + Math.sin(angle) * 52 * scale}`;
-            })
-            .join(" ")}
-        />
-      ))}
-      <polyline points={`${points.join(" ")} ${points[0] ?? ""}`} />
-      {points.map((point) => {
-        const [x, y] = point.split(",");
-        return <circle key={point} cx={x} cy={y} r="4" />;
-      })}
-    </svg>
-  );
-}
-
-function ThiefIcon() {
-  return (
-    <div className="small-thief">
-      <span />
-      <i />
-    </div>
-  );
-}
-
-function numeric(row: CsvRow, keys: string[], fallback = 0): number {
-  for (const key of keys) {
-    const raw = row[key];
-    if (raw !== undefined && raw !== "") {
-      const parsed = Number.parseFloat(raw);
-      if (Number.isFinite(parsed)) return parsed;
-    }
-  }
-  return fallback;
-}
-
-function safeRatio(value: unknown, fallback = 0.5): number {
-  const parsed = typeof value === "number" ? value : Number.parseFloat(String(value ?? ""));
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.max(0, Math.min(1, parsed));
-}
-
-function firstText(row: CsvRow, keys: string[]): string {
-  for (const key of keys) {
-    if (row[key]) return row[key];
-  }
-  return "";
-}
-
-function groupBy(rows: CsvRow[], key: string): Record<string, CsvRow[]> {
-  return rows.reduce<Record<string, CsvRow[]>>((acc, row) => {
-    const group = row[key] || "default";
-    acc[group] = acc[group] ?? [];
-    acc[group].push(row);
-    return acc;
-  }, {});
-}
-
-function makePolyline(data: Array<{ x: number; y: number }>, width: number, height: number, padding: number): string {
-  if (!data.length) return "";
-  const maxX = Math.max(...data.map((item) => item.x), 1);
-  return data
-    .map((item, index) => {
-      const x = padding + ((Number.isFinite(item.x) ? item.x : index) / maxX) * width;
-      const y = padding + height - Math.max(0, Math.min(1, item.y)) * height;
-      return `${x},${y}`;
-    })
-    .join(" ");
-}
-
-function sum(values: number[]): number {
-  return values.reduce((total, value) => total + value, 0);
 }
 
 function pct(value: number | undefined): string {
   return `${Math.round(Math.max(0, Math.min(1, value ?? 0)) * 100)}%`;
-}
-
-function compactLabel(label: string): string {
-  return label.length > 11 ? `${label.slice(0, 9)}…` : label;
 }
 
 export default App;
