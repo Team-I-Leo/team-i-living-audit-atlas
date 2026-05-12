@@ -595,7 +595,7 @@ button:disabled {
 
 .stage-gate {
   position: absolute;
-  z-index: 28;
+  z-index: 14;
   display: grid;
   grid-template-columns: 34px 1fr;
   grid-template-rows: 20px auto;
