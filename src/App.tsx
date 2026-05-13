@@ -213,6 +213,7 @@ function App() {
   const [stageIndex, setStageIndex] = useState(0);
   const [autoRun, setAutoRun] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [memoryOpen, setMemoryOpen] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -268,12 +269,14 @@ function App() {
   const stepBy = (delta: number) => {
     setStageIndex((current) => Math.max(0, Math.min(stages.length - 1, current + delta)));
     setDetailOpen(false);
+    setMemoryOpen(false);
     setAutoRun(false);
   };
 
   const goToStage = (index: number) => {
     setStageIndex(index);
     setDetailOpen(true);
+    setMemoryOpen(false);
     setAutoRun(false);
   };
 
@@ -300,6 +303,7 @@ function App() {
           route={route}
           passport={passport}
           onSelectStage={goToStage}
+          onOpenMemory={() => setMemoryOpen(true)}
         />
         <CurrentStagePanel stage={currentStage} route={route} passport={passport} selectedCase={selectedCase} />
       </section>
@@ -312,6 +316,7 @@ function App() {
         reset={() => {
           setStageIndex(0);
           setDetailOpen(false);
+          setMemoryOpen(false);
           setAutoRun(false);
         }}
         openDetail={() => setDetailOpen(true)}
@@ -326,6 +331,7 @@ function App() {
           close={() => setDetailOpen(false)}
         />
       ) : null}
+      {memoryOpen ? <MemoryModal close={() => setMemoryOpen(false)} /> : null}
     </main>
   );
 }
@@ -370,13 +376,15 @@ function GameWorld({
   selectedCase,
   route,
   passport,
-  onSelectStage
+  onSelectStage,
+  onOpenMemory
 }: {
   stageIndex: number;
   selectedCase: AuditCase;
   route?: RouteInfo;
   passport?: Passport;
   onSelectStage: (index: number) => void;
+  onOpenMemory: () => void;
 }) {
   const stage = stages[stageIndex];
   const caught = stage.no === 7;
@@ -417,6 +425,7 @@ function GameWorld({
       <ThiefSprite stage={stage} caught={caught} />
       <EvidenceFragments stage={stage} route={route} />
       <FinalGate active={stage.no === 7} selectedCase={selectedCase} />
+      <MemoryArchive active={stage.no === 7} onOpen={onOpenMemory} />
       <LifecycleTelemetry stage={stage} route={route} />
     </section>
   );
@@ -575,6 +584,20 @@ function FinalGate({ active, selectedCase }: { active: boolean; selectedCase: Au
         查看风险看板
       </a>
     </div>
+  );
+}
+
+function MemoryArchive({ active, onOpen }: { active: boolean; onOpen: () => void }) {
+  if (!active) return null;
+  return (
+    <button type="button" className="memory-archive" onClick={onOpen} aria-label="打开记忆沉淀">
+      <span className="memory-ray one" />
+      <span className="memory-ray two" />
+      <span className="memory-ray three" />
+      <i>库</i>
+      <b>记忆沉淀</b>
+      <small>模式 · 案例 · 策略</small>
+    </button>
   );
 }
 
@@ -767,6 +790,36 @@ function StageModal({
               <small>{getCaseTitle(selectedCase)} · {getCasePattern(selectedCase)}</small>
             </div>
           </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function MemoryModal({ close }: { close: () => void }) {
+  const deposits = [
+    { title: "risk_pattern", text: "EC-SKIM-001 模式权重增强，团伙刷单骗补特征进入可复用风险模式。" },
+    { title: "case_memory", text: "AER-001 作为可复核历史案例入库，保留证据护照、反证和人工复核结论。" },
+    { title: "policy_action_weight", text: "下次类似案件优先触发支付簇、物流真实性、反证检索等追证动作。" }
+  ];
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="memory-modal-title">
+      <section className="memory-modal pixel-panel">
+        <button type="button" className="close-button" onClick={close} aria-label="关闭记忆沉淀">
+          ×
+        </button>
+        <header>
+          <span>人工复核通过</span>
+          <h2 id="memory-modal-title">记忆沉淀增强系统</h2>
+          <p>证据护照盖章后，系统把本次追证经验写回模式库、案例记忆和策略权重。</p>
+        </header>
+        <div className="memory-deposit-grid">
+          {deposits.map((item) => (
+            <div key={item.title}>
+              <b>{item.title}</b>
+              <p>{item.text}</p>
+            </div>
+          ))}
         </div>
       </section>
     </div>
